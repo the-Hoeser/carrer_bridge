@@ -1,0 +1,112 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    // Collection: users
+    // Document ID: {userId}
+    // Fields: uid, email, displayName, education, interests, currentSkills, createdAt
+    //
+    // Collection: roadmaps
+    // Document ID: {roadmapId}
+    // Fields: userId, targetRole, skillGap, recommendedSkills, learningRoadmap, projects, careerAdvice, createdAt
+    //
+    // Collection: progress
+    // Document ID: {progressId}
+    // Fields: userId, courseId, completed, lastAccessed
+    //
+    // Collection: resumes
+    // Document ID: {resumeId}
+    // Fields: userId, personalInfo, experience, education, skills, projects, lastUpdated
+    // ===============================================================
+
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.userId;
+    }
+    function uidUnchanged() {
+      return !('userId' in request.resource.data) || request.resource.data.userId == request.auth.uid;
+    }
+    function uidNotModified() {
+      return !('userId' in request.resource.data) || request.resource.data.userId == resource.data.userId;
+    }
+
+    // Domain Validators
+    function isValidUser() {
+      let data = request.resource.data;
+      return data.keys().hasAll(['uid', 'email']) &&
+             data.uid is string && data.uid.size() > 0 && data.uid.size() < 128 &&
+             data.email is string && data.email.size() > 0 && data.email.size() < 256 &&
+             (!('displayName' in data) || (data.displayName is string && data.displayName.size() < 100)) &&
+             (!('education' in data) || (data.education is string && data.education.size() < 200)) &&
+             (!('interests' in data) || (data.interests is list && data.interests.size() < 50)) &&
+             (!('currentSkills' in data) || (data.currentSkills is list && data.currentSkills.size() < 50));
+    }
+
+    function isValidRoadmap() {
+      let data = request.resource.data;
+      return data.keys().hasAll(['userId', 'targetRole']) &&
+             data.userId is string && data.userId.size() > 0 && data.userId.size() < 128 &&
+             data.targetRole is string && data.targetRole.size() > 0 && data.targetRole.size() < 100 &&
+             (!('skillGap' in data) || data.skillGap is list) &&
+             (!('recommendedSkills' in data) || data.recommendedSkills is list) &&
+             (!('learningRoadmap' in data) || data.learningRoadmap is list) &&
+             (!('projects' in data) || data.projects is list) &&
+             (!('careerAdvice' in data) || (data.careerAdvice is string && data.careerAdvice.size() < 5000));
+    }
+
+    function isValidProgress() {
+      let data = request.resource.data;
+      return data.keys().hasAll(['userId', 'courseId', 'completed']) &&
+             data.userId is string && data.userId.size() > 0 && data.userId.size() < 128 &&
+             data.courseId is string && data.courseId.size() > 0 && data.courseId.size() < 128 &&
+             data.completed is bool;
+    }
+
+    function isValidResume() {
+      let data = request.resource.data;
+      return data.keys().hasAll(['userId']) &&
+             data.userId is string && data.userId.size() > 0 && data.userId.size() < 128 &&
+             (!('personalInfo' in data) || (data.personalInfo is string && data.personalInfo.size() < 5000)) &&
+             (!('experience' in data) || (data.experience is string && data.experience.size() < 10000)) &&
+             (!('education' in data) || (data.education is string && data.education.size() < 5000)) &&
+             (!('skills' in data) || (data.skills is string && data.skills.size() < 5000)) &&
+             (!('projects' in data) || (data.projects is string && data.projects.size() < 10000));
+    }
+
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUser() && request.resource.data.uid == request.auth.uid;
+      allow update: if isOwner(userId) && isValidUser() && request.resource.data.uid == resource.data.uid;
+      allow delete: if isOwner(userId);
+    }
+
+    match /roadmaps/{roadmapId} {
+      allow read: if isDocOwner();
+      allow create: if isAuthenticated() && isValidRoadmap() && uidUnchanged();
+      allow update: if isDocOwner() && isValidRoadmap() && uidNotModified();
+      allow delete: if isDocOwner();
+    }
+
+    match /progress/{progressId} {
+      allow read: if isDocOwner();
+      allow create: if isAuthenticated() && isValidProgress() && uidUnchanged();
+      allow update: if isDocOwner() && isValidProgress() && uidNotModified();
+      allow delete: if isDocOwner();
+    }
+
+    match /resumes/{resumeId} {
+      allow read: if isDocOwner();
+      allow create: if isAuthenticated() && isValidResume() && uidUnchanged();
+      allow update: if isDocOwner() && isValidResume() && uidNotModified();
+      allow delete: if isDocOwner();
+    }
+  }
+}

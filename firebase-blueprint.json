@@ -1,0 +1,98 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile data",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "displayName": { "type": "string" },
+        "education": { "type": "string" },
+        "interests": { "type": "array", "items": { "type": "string" } },
+        "currentSkills": { "type": "array", "items": { "type": "string" } },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email"]
+    },
+    "Roadmap": {
+      "title": "Roadmap",
+      "description": "AI generated career roadmap",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "targetRole": { "type": "string" },
+        "skillGap": { "type": "array", "items": { "type": "string" } },
+        "recommendedSkills": { "type": "array", "items": { "type": "string" } },
+        "learningRoadmap": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "phase": { "type": "string" },
+              "focus": { "type": "string" }
+            }
+          }
+        },
+        "projects": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "title": { "type": "string" },
+              "description": { "type": "string" }
+            }
+          }
+        },
+        "careerAdvice": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "targetRole"]
+    },
+    "Progress": {
+      "title": "Progress",
+      "description": "User course progress",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "courseId": { "type": "string" },
+        "completed": { "type": "boolean" },
+        "lastAccessed": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "courseId", "completed"]
+    },
+    "Resume": {
+      "title": "Resume",
+      "description": "User resume data",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "personalInfo": { "type": "string" },
+        "experience": { "type": "string" },
+        "education": { "type": "string" },
+        "skills": { "type": "string" },
+        "projects": { "type": "string" },
+        "lastUpdated": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "Stores user profiles"
+    },
+    "/roadmaps/{roadmapId}": {
+      "schema": { "$ref": "#/entities/Roadmap" },
+      "description": "Stores AI generated roadmaps"
+    },
+    "/progress/{progressId}": {
+      "schema": { "$ref": "#/entities/Progress" },
+      "description": "Stores user progress in learning"
+    },
+    "/resumes/{resumeId}": {
+      "schema": { "$ref": "#/entities/Resume" },
+      "description": "Stores user resumes"
+    }
+  }
+}
