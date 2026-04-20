@@ -1,21 +1,183 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../components/AuthContext';
-import { db, handleFirestoreError, OperationType } from '../firebase';
-import { collection, addDoc, query, where, getDocs, orderBy, limit } from 'firebase/firestore';
-import { GoogleGenAI, Type } from '@google/genai';
-import { motion } from 'motion/react';
-import { Sparkles, Loader2, Target, CheckCircle2, BookOpen, Briefcase, ArrowRight } from 'lucide-react';
+import { db, handleFirestoreError, OperationType, fetchWithAuth } from '../firebase';
+import { collection, addDoc, query, where, getDocs, orderBy, limit, doc, setDoc } from 'firebase/firestore';
+import {
+  Sparkles, Loader2, Target, CheckCircle2, BookOpen, Briefcase, ArrowRight,
+  ChevronDown, ChevronRight, Calendar, Clock, Star, Settings2, BarChart3,
+  TrendingUp, Zap, CheckSquare, Square, AlertCircle, RefreshCw, Trophy, Flame
+} from 'lucide-react';
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+// ─── Types ────────────────────────────────────────────────────────────────────
+interface DayTask {
+  day: string;
+  task: string;
+  youtubeQuery: string;
+  estimatedMinutes: number;
+  topicsCovered?: number;
+  completed?: boolean;
+}
+interface Week { week: number; goal: string; topicsCount?: number; days: DayTask[]; }
+interface Month { month: number; title: string; focus: string; topicsCount?: number; weeks: Week[]; }
+interface Roadmap {
+  userId: string;
+  targetRole: string;
+  skillGap: string[];
+  recommendedSkills: string[];
+  careerAdvice: string;
+  weeklyTopicsEstimate?: number;
+  completionForecast?: string;
+  projects: { title: string; description: string; difficulty?: string }[];
+  months: Month[];
+  createdAt: string;
+  studyPrefs?: StudyPrefs;
+  completedDays?: Record<string, boolean>;
+}
+interface StudyPrefs { hoursPerDay: number; daysPerWeek: number; }
 
+// ─── Study Prefs Modal ────────────────────────────────────────────────────────
+function StudyPrefsModal({
+  prefs, onSave, onClose
+}: {
+  prefs: StudyPrefs;
+  onSave: (p: StudyPrefs) => void;
+  onClose: () => void;
+}) {
+  const [local, setLocal] = useState(prefs);
+  const weeklyHours = local.hoursPerDay * local.daysPerWeek;
+
+  return (
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md p-8" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center gap-3 mb-6">
+          <div className="w-10 h-10 rounded-2xl bg-accent-blue/10 flex items-center justify-center">
+            <Settings2 className="w-5 h-5 text-accent-blue" />
+          </div>
+          <div>
+            <h3 className="font-bold text-[#1D1D1F]">Study Schedule Settings</h3>
+            <p className="text-xs text-[#86868B]">Adjust your daily commitment</p>
+          </div>
+        </div>
+
+        <div className="space-y-6">
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <label className="text-sm font-semibold text-[#1D1D1F]">Hours per day</label>
+              <span className="text-2xl font-bold text-accent-blue">{local.hoursPerDay}h</span>
+            </div>
+            <input
+              type="range" min="0.5" max="8" step="0.5"
+              value={local.hoursPerDay}
+              onChange={e => setLocal({ ...local, hoursPerDay: Number(e.target.value) })}
+              className="w-full accent-blue-500"
+            />
+            <div className="flex justify-between text-xs text-[#86868B] mt-1">
+              <span>30 min</span><span>4h</span><span>8h</span>
+            </div>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <label className="text-sm font-semibold text-[#1D1D1F]">Days per week</label>
+              <span className="text-2xl font-bold text-accent-blue">{local.daysPerWeek}d</span>
+            </div>
+            <div className="flex gap-2">
+              {[1, 2, 3, 4, 5, 6, 7].map(d => (
+                <button
+                  key={d}
+                  onClick={() => setLocal({ ...local, daysPerWeek: d })}
+                  className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all ${
+                    local.daysPerWeek === d
+                      ? 'bg-accent-blue text-white shadow-md'
+                      : 'bg-[#F5F5F7] text-[#86868B] hover:bg-black/5'
+                  }`}
+                >
+                  {d}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="bg-gradient-to-r from-accent-blue/5 to-accent-green/5 rounded-2xl p-4 border border-black/5">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-[#86868B]">Weekly commitment</p>
+                <p className="text-xl font-bold text-[#1D1D1F] mt-0.5">{weeklyHours}h / week</p>
+              </div>
+              <div className="text-right">
+                <p className="text-xs text-[#86868B]">Monthly</p>
+                <p className="text-xl font-bold text-accent-blue mt-0.5">~{Math.round(weeklyHours * 4)}h</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex gap-3 mt-8">
+          <button onClick={onClose} className="flex-1 py-3 rounded-xl border border-black/10 text-sm font-semibold text-[#86868B] hover:bg-black/5 transition-colors">
+            Cancel
+          </button>
+          <button
+            onClick={() => { onSave(local); onClose(); }}
+            className="flex-1 py-3 rounded-xl bg-accent-blue text-white text-sm font-bold hover:bg-accent-blue/90 transition-colors"
+          >
+            Save & Regenerate
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Weekly Forecast Card ─────────────────────────────────────────────────────
+function WeeklyForecastCard({ roadmap, prefs }: { roadmap: Roadmap; prefs: StudyPrefs }) {
+  const months = roadmap.months || [];
+  const totalDays = months.reduce((acc, m) =>
+    acc + (m.weeks || []).reduce((wa, w) => wa + (w.days?.length || 0), 0), 0);
+  const completedDays = Object.values(roadmap.completedDays || {}).filter(Boolean).length;
+  const pct = totalDays > 0 ? Math.round((completedDays / totalDays) * 100) : 0;
+
+  const weeklyHours = prefs.hoursPerDay * prefs.daysPerWeek;
+  const weeklyTopics = roadmap.weeklyTopicsEstimate || Math.round(prefs.daysPerWeek * 0.6);
+
+  return (
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      {[
+        { icon: Clock, label: 'Per Day', value: `${prefs.hoursPerDay}h`, sub: `${Math.round(prefs.hoursPerDay * 60)} min`, color: 'text-accent-blue', bg: 'bg-accent-blue/10' },
+        { icon: BarChart3, label: 'Per Week', value: `${weeklyHours}h`, sub: `${prefs.daysPerWeek} study days`, color: 'text-accent-green', bg: 'bg-accent-green/10' },
+        { icon: BookOpen, label: 'Topics/Week', value: `~${weeklyTopics}`, sub: 'topics covered', color: 'text-violet-500', bg: 'bg-violet-50' },
+        { icon: Trophy, label: 'Completed', value: `${pct}%`, sub: `${completedDays}/${totalDays} tasks`, color: 'text-accent-amber', bg: 'bg-amber-50' },
+      ].map(({ icon: Icon, label, value, sub, color, bg }) => (
+        <div key={label} className="glass-card p-5 flex items-center gap-4">
+          <div className={`w-11 h-11 rounded-2xl ${bg} flex items-center justify-center flex-shrink-0`}>
+            <Icon className={`w-5 h-5 ${color}`} />
+          </div>
+          <div>
+            <p className="text-xs text-[#86868B]">{label}</p>
+            <p className={`text-xl font-bold ${color}`}>{value}</p>
+            <p className="text-xs text-[#86868B]">{sub}</p>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── Main CareerGuide ─────────────────────────────────────────────────────────
 export function CareerGuide() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(true);
   const [converting, setConverting] = useState(false);
-  const [roadmap, setRoadmap] = useState<any>(null);
+  const [roadmap, setRoadmap] = useState<Roadmap | null>(null);
+  const [roadmapDocId, setRoadmapDocId] = useState<string | null>(null);
+  const [expandedMonths, setExpandedMonths] = useState<Set<number>>(new Set([0]));
+  const [expandedWeeks, setExpandedWeeks] = useState<Set<string>>(new Set(['0-0']));
+  const [showPrefsModal, setShowPrefsModal] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const [studyPrefs, setStudyPrefs] = useState<StudyPrefs>({ hoursPerDay: 1, daysPerWeek: 5 });
 
   const [formData, setFormData] = useState({
     targetRole: '',
@@ -26,18 +188,24 @@ export function CareerGuide() {
 
   useEffect(() => {
     if (!user) return;
-
     const fetchLatestRoadmap = async () => {
       try {
-        const q = query(
-          collection(db, 'roadmaps'),
-          where('userId', '==', user.uid),
-          orderBy('createdAt', 'desc'),
-          limit(1)
-        );
+        const q = query(collection(db, 'roadmaps'), where('userId', '==', user.uid), orderBy('createdAt', 'desc'), limit(1));
         const snapshot = await getDocs(q);
         if (!snapshot.empty) {
-          setRoadmap(snapshot.docs[0].data());
+          const d = snapshot.docs[0];
+          const data = d.data() as Roadmap;
+          setRoadmap(data);
+          setRoadmapDocId(d.id);
+          if (data.studyPrefs) setStudyPrefs(data.studyPrefs);
+          setExpandedMonths(new Set([0]));
+          setExpandedWeeks(new Set(['0-0']));
+        }
+        // Load saved prefs
+        const prefsDoc = await getDocs(query(collection(db, 'studyPrefs'), where('userId', '==', user.uid)));
+        if (!prefsDoc.empty) {
+          const p = prefsDoc.docs[0].data();
+          setStudyPrefs({ hoursPerDay: p.hoursPerDay || 1, daysPerWeek: p.daysPerWeek || 5 });
         }
       } catch (error) {
         handleFirestoreError(error, OperationType.GET, 'roadmaps');
@@ -45,81 +213,91 @@ export function CareerGuide() {
         setFetching(false);
       }
     };
-
     fetchLatestRoadmap();
   }, [user]);
+
+  const toggleMonth = (i: number) => setExpandedMonths(prev => {
+    const next = new Set(prev); next.has(i) ? next.delete(i) : next.add(i); return next;
+  });
+  const toggleWeek = (key: string) => setExpandedWeeks(prev => {
+    const next = new Set(prev); next.has(key) ? next.delete(key) : next.add(key); return next;
+  });
+
+  // ── Toggle day task completion ─────────────────────────────────────────────
+  const toggleDayComplete = useCallback(async (dayKey: string) => {
+    if (!roadmap) return;
+    const newCompleted = { ...(roadmap.completedDays || {}), [dayKey]: !roadmap.completedDays?.[dayKey] };
+    const updatedRoadmap = { ...roadmap, completedDays: newCompleted };
+    setRoadmap(updatedRoadmap);
+    if (roadmapDocId) {
+      try {
+        const { updateDoc, doc: firestoreDoc } = await import('firebase/firestore');
+        await updateDoc(firestoreDoc(db, 'roadmaps', roadmapDocId), { completedDays: newCompleted });
+      } catch {}
+    }
+  }, [roadmap, roadmapDocId]);
 
   const generateRoadmap = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
-
     setLoading(true);
+    setError(null);
     try {
-      const prompt = `
-        You are an expert career counselor and technical mentor.
-        A student has provided the following profile:
-        - Target Role: ${formData.targetRole}
-        - Education: ${formData.education}
-        - Current Skills: ${formData.currentSkills}
-        - Interests: ${formData.interests}
-        
-        Generate a highly personalized, structured career roadmap for them.
-      `;
-
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.1-pro-preview',
-        contents: prompt,
-        config: {
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              skillGap: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Skills they are missing for the target role." },
-              recommendedSkills: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Skills they should focus on learning." },
-              learningRoadmap: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    phase: { type: Type.STRING, description: "e.g., Month 1, Phase 1" },
-                    focus: { type: Type.STRING, description: "What to focus on during this phase." }
-                  }
-                }
-              },
-              projects: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    title: { type: Type.STRING },
-                    description: { type: Type.STRING }
-                  }
-                }
-              },
-              careerAdvice: { type: Type.STRING, description: "General advice for their career journey." }
-            },
-            required: ["skillGap", "recommendedSkills", "learningRoadmap", "projects", "careerAdvice"]
-          }
-        }
+      const response = await fetchWithAuth('/api/generateRoadmap', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...formData, ...studyPrefs })
       });
 
-      const generatedData = JSON.parse(response.text || '{}');
-      
-      const newRoadmap = {
+      const text = await response.text();
+      let generatedData: any;
+      try {
+        generatedData = JSON.parse(text);
+      } catch {
+        throw new Error('Server returned invalid data. Check that the backend server is running (npm run server).');
+      }
+
+      if (generatedData.error) throw new Error(generatedData.error);
+      if (!generatedData.months?.length) throw new Error('AI returned an incomplete roadmap. Please try again.');
+
+      const newRoadmap: Roadmap = {
         userId: user.uid,
         targetRole: formData.targetRole,
         ...generatedData,
+        studyPrefs,
+        completedDays: {},
         createdAt: new Date().toISOString()
       };
 
-      await addDoc(collection(db, 'roadmaps'), newRoadmap);
+      const docRef = await addDoc(collection(db, 'roadmaps'), newRoadmap);
+      setRoadmapDocId(docRef.id);
       setRoadmap(newRoadmap);
-      
-    } catch (error) {
-      console.error("AI Generation Error:", error);
-      alert("Failed to generate roadmap. Please try again.");
+      setExpandedMonths(new Set([0]));
+      setExpandedWeeks(new Set(['0-0']));
+    } catch (error: any) {
+      console.error('Roadmap Generation Error:', error);
+      setError(error?.message || 'Unknown error. Please try again.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSavePrefs = async (newPrefs: StudyPrefs) => {
+    setStudyPrefs(newPrefs);
+    if (user) {
+      try {
+        await setDoc(doc(db, 'studyPrefs', user.uid), { userId: user.uid, ...newPrefs });
+      } catch {}
+    }
+    // If we have a roadmap, offer to regenerate
+    if (roadmap) {
+      setRoadmap(null); // show form again with new prefs
+      setFormData({
+        targetRole: roadmap.targetRole || '',
+        education: '',
+        currentSkills: '',
+        interests: ''
+      });
     }
   };
 
@@ -127,268 +305,435 @@ export function CareerGuide() {
     if (!user || !roadmap) return;
     setConverting(true);
     try {
-      const prompt = `
-        Convert the following career roadmap into a structured learning course.
-        Generate a motivating and engaging course name (e.g., "JavaScript Mastery Journey").
-        Structure the course into Modules (e.g., Beginner, Intermediate, Advanced) and Topics inside each module.
-        For each topic, suggest a relevant YouTube video with a title and a search query.
-        
-        Roadmap:
-        Target Role: ${roadmap.targetRole}
-        Skill Gap: ${roadmap.skillGap?.join(', ')}
-        Recommended Skills: ${roadmap.recommendedSkills?.join(', ')}
-        Learning Roadmap: ${JSON.stringify(roadmap.learningRoadmap)}
-      `;
-
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.1-pro-preview',
-        contents: prompt,
-        config: {
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              courseName: { type: Type.STRING },
-              description: { type: Type.STRING },
-              modules: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    title: { type: Type.STRING },
-                    topics: {
-                      type: Type.ARRAY,
-                      items: {
-                        type: Type.OBJECT,
-                        properties: {
-                          title: { type: Type.STRING },
-                          videoSuggestion: {
-                            type: Type.OBJECT,
-                            properties: {
-                              title: { type: Type.STRING },
-                              searchQuery: { type: Type.STRING }
-                            }
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            },
-            required: ["courseName", "description", "modules"]
-          }
-        }
+      const response = await fetchWithAuth('/api/convertToCourse', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetRole: roadmap.targetRole, recommendedSkills: roadmap.recommendedSkills, skillGap: roadmap.skillGap })
       });
 
-      const generatedCourse = JSON.parse(response.text || '{}');
-      
+      const text = await response.text();
+      let gen: any;
+      try { gen = JSON.parse(text); } catch { throw new Error('Server returned invalid data.'); }
+      if (gen.error) throw new Error(gen.error);
+      if (!gen.courseName || !gen.modules?.length) throw new Error('Bad AI response — try again.');
+
       const newCourse = {
         userId: user.uid,
         targetRole: roadmap.targetRole,
         category: 'AI Generated',
-        ...generatedCourse,
+        courseName: gen.courseName,
+        description: gen.description,
+        modules: gen.modules.map((m: any) => ({
+          title: m.title,
+          topics: (m.topics || []).map((t: any) => ({
+            id: t.id || `t-${Math.random().toString(36).slice(2, 9)}`,
+            title: t.title,
+            duration: t.duration || '15 min',
+            description: t.description || '',
+            videoSuggestion: {
+              searchQuery: t.searchQuery,
+              title: t.title,
+              // Pre-resolved video ID — permanently embedded, no re-fetching needed
+              ...(t.videoId ? { videoId: t.videoId } : {})
+            }
+          }))
+        })),
         progress: 0,
         completedTopics: [],
+        watchProgress: {},
         createdAt: new Date().toISOString()
       };
 
       await addDoc(collection(db, 'courses'), newCourse);
-      alert("Your personalized course is ready 🚀");
       navigate('/learning');
-      
-    } catch (error) {
-      console.error("Course Generation Error:", error);
-      alert("Failed to convert roadmap to course. Please try again.");
+    } catch (error: any) {
+      console.error('Course Generation Error:', error);
+      setError(error?.message || 'Course generation failed.');
     } finally {
       setConverting(false);
     }
   };
 
-  if (fetching) {
-    return <div className="flex justify-center p-12"><Loader2 className="w-8 h-8 animate-spin text-accent-blue" /></div>;
-  }
+  if (fetching) return (
+    <div className="space-y-8">
+      <div className="h-10 w-72 skeleton" />
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {[1,2,3,4].map(i => <div key={i} className="h-24 skeleton rounded-2xl" />)}
+      </div>
+      <div className="h-64 skeleton rounded-2xl" />
+    </div>
+  );
 
   return (
     <div className="space-y-10">
-      <header>
-        <h1 className="text-3xl font-bold tracking-tight text-[#1D1D1F] flex items-center gap-3">
-          <Sparkles className="w-8 h-8 text-accent-blue" />
-          AI Career Guide
-        </h1>
-        <p className="text-[#86868B] mt-2">Get a personalized learning path and skill gap analysis.</p>
+      {showPrefsModal && (
+        <StudyPrefsModal
+          prefs={studyPrefs}
+          onSave={handleSavePrefs}
+          onClose={() => setShowPrefsModal(false)}
+        />
+      )}
+
+      <header className="flex flex-col md:flex-row md:items-start justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight text-[#1D1D1F] flex items-center gap-3">
+            <Sparkles className="w-8 h-8 text-accent-blue" />
+            AI Career Guide
+          </h1>
+          <p className="text-[#86868B] mt-2">Get a personalized daily learning plan tailored to your goals and schedule.</p>
+        </div>
+        <button
+          onClick={() => setShowPrefsModal(true)}
+          className="flex items-center gap-2 px-4 py-2 rounded-xl border border-black/10 text-sm font-medium text-[#86868B] hover:text-[#1D1D1F] hover:border-black/20 transition-all bg-white"
+        >
+          <Settings2 className="w-4 h-4" />
+          Study Schedule: {studyPrefs.hoursPerDay}h/day · {studyPrefs.daysPerWeek}d/week
+        </button>
       </header>
 
-      {!roadmap || loading ? (
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
-          className="glass-card p-8 max-w-2xl"
-        >
-          <form onSubmit={generateRoadmap} className="space-y-6">
+      {/* Error banner */}
+      {error && (
+        <div className="flex items-start gap-3 p-4 bg-red-50 border border-red-200 rounded-2xl text-red-700">
+          <AlertCircle className="w-5 h-5 mt-0.5 flex-shrink-0" />
+          <div className="flex-1">
+            <p className="font-semibold text-sm">Generation Failed</p>
+            <p className="text-sm mt-0.5">{error}</p>
+            <p className="text-xs mt-2 text-red-500">Make sure the backend is running: <code className="bg-red-100 px-1 rounded">npm run server</code></p>
+          </div>
+          <button onClick={() => setError(null)} className="text-red-400 hover:text-red-600">✕</button>
+        </div>
+      )}
+
+      {!roadmap ? (
+        /* ── FORM ── */
+        <div className="glass-card p-8 max-w-2xl">
+          <h2 className="text-xl font-bold text-[#1D1D1F] mb-6">Tell us about yourself</h2>
+
+          {/* Study time quick-set */}
+          <div className="mb-6 p-4 bg-gradient-to-r from-accent-blue/5 to-accent-green/5 rounded-2xl border border-black/5">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Clock className="w-4 h-4 text-accent-blue" />
+                <span className="text-sm font-semibold text-[#1D1D1F]">How much time can you study?</span>
+              </div>
+              <span className="text-xs text-[#86868B]">{studyPrefs.hoursPerDay}h/day · {studyPrefs.daysPerWeek} days/week</span>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-xs text-[#86868B] mb-1 block">Hours per day</label>
+                <div className="flex gap-1.5 flex-wrap">
+                  {[0.5, 1, 1.5, 2, 3, 4].map(h => (
+                    <button key={h}
+                      onClick={() => setStudyPrefs(p => ({ ...p, hoursPerDay: h }))}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${studyPrefs.hoursPerDay === h ? 'bg-accent-blue text-white' : 'bg-white border border-black/10 text-[#86868B] hover:border-accent-blue/30'}`}
+                    >{h === 0.5 ? '30m' : `${h}h`}</button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="text-xs text-[#86868B] mb-1 block">Days per week</label>
+                <div className="flex gap-1.5">
+                  {[3, 4, 5, 6, 7].map(d => (
+                    <button key={d}
+                      onClick={() => setStudyPrefs(p => ({ ...p, daysPerWeek: d }))}
+                      className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all ${studyPrefs.daysPerWeek === d ? 'bg-accent-blue text-white' : 'bg-white border border-black/10 text-[#86868B] hover:border-accent-blue/30'}`}
+                    >{d}d</button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <form onSubmit={generateRoadmap} className="space-y-5">
             <div>
-              <label className="block text-sm font-medium text-[#1D1D1F] mb-2">Target Role</label>
-              <input 
-                required
-                type="text" 
-                placeholder="e.g. Full Stack Developer, Data Scientist"
-                className="glass-input"
-                value={formData.targetRole}
-                onChange={e => setFormData({...formData, targetRole: e.target.value})}
-              />
+              <label className="block text-sm font-medium text-[#1D1D1F] mb-2">Target Role *</label>
+              <input required type="text" placeholder="e.g. Full Stack Developer, Data Scientist, UX Designer" className="glass-input" value={formData.targetRole} onChange={e => setFormData({ ...formData, targetRole: e.target.value })} />
             </div>
             <div>
               <label className="block text-sm font-medium text-[#1D1D1F] mb-2">Current Education</label>
-              <input 
-                required
-                type="text" 
-                placeholder="e.g. B.S. Computer Science, Self-taught"
-                className="glass-input"
-                value={formData.education}
-                onChange={e => setFormData({...formData, education: e.target.value})}
-              />
+              <input type="text" placeholder="e.g. B.S. Computer Science, Self-taught engineer" className="glass-input" value={formData.education} onChange={e => setFormData({ ...formData, education: e.target.value })} />
             </div>
             <div>
               <label className="block text-sm font-medium text-[#1D1D1F] mb-2">Current Skills (comma separated)</label>
-              <input 
-                required
-                type="text" 
-                placeholder="e.g. HTML, CSS, basic Python"
-                className="glass-input"
-                value={formData.currentSkills}
-                onChange={e => setFormData({...formData, currentSkills: e.target.value})}
-              />
+              <input type="text" placeholder="e.g. HTML, CSS, basic Python, Excel" className="glass-input" value={formData.currentSkills} onChange={e => setFormData({ ...formData, currentSkills: e.target.value })} />
             </div>
             <div>
-              <label className="block text-sm font-medium text-[#1D1D1F] mb-2">Interests</label>
-              <input 
-                required
-                type="text" 
-                placeholder="e.g. AI, Web3, Open Source, Design"
-                className="glass-input"
-                value={formData.interests}
-                onChange={e => setFormData({...formData, interests: e.target.value})}
-              />
+              <label className="block text-sm font-medium text-[#1D1D1F] mb-2">Interests & Goals</label>
+              <input type="text" placeholder="e.g. AI, startups, freelancing, gaming industry" className="glass-input" value={formData.interests} onChange={e => setFormData({ ...formData, interests: e.target.value })} />
             </div>
-            
-            <button 
-              type="submit" 
-              disabled={loading}
-              className="btn-primary w-full mt-4"
-            >
-              {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />}
-              {loading ? 'Analyzing Profile & Generating...' : 'Generate My Roadmap'}
-            </button>
-          </form>
-        </motion.div>
-      ) : (
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
-          className="space-y-10"
-        >
-          <div className="flex items-center justify-between">
-            <h2 className="text-2xl font-semibold text-[#1D1D1F]">Your Path to <span className="text-accent-blue">{roadmap.targetRole}</span></h2>
-            <button 
-              onClick={() => setRoadmap(null)}
-              className="text-sm text-[#86868B] hover:text-[#1D1D1F] underline transition-colors"
-            >
-              Generate New
-            </button>
-          </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            <div className="glass-card p-8">
-              <h3 className="flex items-center gap-2 text-lg font-medium text-[#1D1D1F] mb-6">
-                <Target className="w-5 h-5 text-accent-blue" /> Skill Gap
-              </h3>
-              <ul className="space-y-4">
-                {roadmap.skillGap?.map((skill: string, i: number) => (
-                  <li key={i} className="flex items-start gap-3 text-[#86868B]">
-                    <span className="w-1.5 h-1.5 rounded-full bg-accent-blue mt-2 flex-shrink-0" />
-                    {skill}
-                  </li>
-                ))}
+            <div className="pt-2 p-4 bg-[#F5F5F7] rounded-xl text-sm text-[#86868B]">
+              <p className="font-medium text-[#1D1D1F] mb-1">📅 Your plan will include:</p>
+              <ul className="space-y-1 text-xs">
+                <li>• {Math.round(studyPrefs.hoursPerDay * 60)}-minute daily tasks, {studyPrefs.daysPerWeek} days/week</li>
+                <li>• ~{Math.round(studyPrefs.daysPerWeek * 0.6)} topics covered per week</li>
+                <li>• Weekly completion forecast & progress tracking</li>
               </ul>
             </div>
 
-            <div className="glass-card p-8">
-              <h3 className="flex items-center gap-2 text-lg font-medium text-[#1D1D1F] mb-6">
-                <CheckCircle2 className="w-5 h-5 text-accent-green" /> Recommended Skills
+            <button type="submit" disabled={loading} className="btn-primary w-full mt-2">
+              {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />}
+              {loading ? 'AI is building your roadmap…' : 'Generate My Personalized Roadmap'}
+            </button>
+          </form>
+        </div>
+      ) : (
+        /* ── ROADMAP VIEW ── */
+        <div className="space-y-8">
+
+          {/* Header row */}
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <div>
+              <h2 className="text-2xl font-bold text-[#1D1D1F]">
+                Your Path to <span className="text-accent-blue">{roadmap.targetRole}</span>
+              </h2>
+              {roadmap.completionForecast && (
+                <p className="text-sm text-[#86868B] mt-1 flex items-center gap-1.5">
+                  <TrendingUp className="w-4 h-4 text-accent-green" />
+                  {roadmap.completionForecast}
+                </p>
+              )}
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowPrefsModal(true)}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl border border-black/10 text-sm font-medium text-[#86868B] hover:text-[#1D1D1F] bg-white transition-all"
+              >
+                <Settings2 className="w-4 h-4" />
+                Schedule
+              </button>
+              <button
+                onClick={() => { setRoadmap(null); setError(null); }}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl border border-black/10 text-sm font-medium text-[#86868B] hover:text-[#1D1D1F] bg-white transition-all"
+              >
+                <RefreshCw className="w-4 h-4" />
+                New Roadmap
+              </button>
+            </div>
+          </div>
+
+          {/* Weekly Forecast Strip */}
+          <WeeklyForecastCard roadmap={roadmap} prefs={studyPrefs} />
+
+          {/* Skills Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="glass-card p-6">
+              <h3 className="flex items-center gap-2 text-base font-bold text-[#1D1D1F] mb-4">
+                <Target className="w-4 h-4 text-red-500" /> Skill Gaps to Close
               </h3>
-              <div className="flex flex-wrap gap-3">
-                {roadmap.recommendedSkills?.map((skill: string, i: number) => (
-                  <span key={i} className="px-4 py-2 bg-accent-green/10 text-accent-green border border-accent-green/20 rounded-full text-sm font-medium">
-                    {skill}
-                  </span>
+              <div className="flex flex-wrap gap-2">
+                {roadmap.skillGap?.map((s, i) => (
+                  <span key={i} className="px-3 py-1.5 bg-red-50 text-red-600 border border-red-100 rounded-full text-xs font-semibold">{s}</span>
+                ))}
+              </div>
+            </div>
+            <div className="glass-card p-6">
+              <h3 className="flex items-center gap-2 text-base font-bold text-[#1D1D1F] mb-4">
+                <CheckCircle2 className="w-4 h-4 text-accent-green" /> Skills You'll Master
+              </h3>
+              <div className="flex flex-wrap gap-2">
+                {roadmap.recommendedSkills?.map((s, i) => (
+                  <span key={i} className="px-3 py-1.5 bg-accent-green/10 text-accent-green border border-accent-green/20 rounded-full text-xs font-semibold">{s}</span>
                 ))}
               </div>
             </div>
           </div>
 
-          <div className="glass-card p-10">
-            <h3 className="flex items-center gap-2 text-lg font-medium text-[#1D1D1F] mb-10">
-              <BookOpen className="w-5 h-5 text-accent-blue" /> Learning Roadmap
+          {/* Monthly Roadmap */}
+          <div className="glass-card p-6">
+            <h3 className="flex items-center gap-2 text-base font-bold text-[#1D1D1F] mb-6">
+              <Calendar className="w-4 h-4 text-accent-blue" />
+              Daily Learning Plan
+              <span className="ml-auto text-xs font-normal text-[#86868B]">Click tasks to mark complete</span>
             </h3>
-            <div className="space-y-10 relative before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-px before:bg-gradient-to-b before:from-accent-blue/50 before:via-accent-green/50 before:to-transparent">
-              {roadmap.learningRoadmap?.map((step: any, i: number) => (
-                <div key={i} className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active">
-                  <div className="flex items-center justify-center w-10 h-10 rounded-full border-4 border-white bg-accent-blue/20 text-accent-blue shadow-[0_0_15px_rgba(0,113,227,0.15)] shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 z-10 font-bold">
-                    {i + 1}
+            <div className="space-y-3">
+              {(roadmap.months || []).map((month, mIdx) => {
+                const allDaysInMonth = (month.weeks || []).flatMap(w => w.days || []);
+                // Build per-week keys correctly
+                let dayCounter = 0;
+                const monthDayKeys: string[] = [];
+                (month.weeks || []).forEach((w, wIdx) => {
+                  (w.days || []).forEach((_, dIdx) => {
+                    monthDayKeys.push(`m${mIdx}-w${wIdx}-d${dIdx}`);
+                    dayCounter++;
+                  });
+                });
+                const doneInMonth = monthDayKeys.filter(k => roadmap.completedDays?.[k]).length;
+                const pctMonth = allDaysInMonth.length > 0 ? Math.round((doneInMonth / allDaysInMonth.length) * 100) : 0;
+
+                return (
+                  <div key={mIdx} className="border border-black/8 rounded-2xl overflow-hidden">
+                    <button
+                      onClick={() => toggleMonth(mIdx)}
+                      className="w-full flex items-center justify-between p-5 bg-[#F5F5F7] hover:bg-black/5 transition-colors"
+                    >
+                      <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 rounded-2xl bg-accent-blue text-white flex flex-col items-center justify-center font-bold text-xs leading-tight">
+                          <span className="text-[10px] opacity-70">MONTH</span>
+                          <span className="text-lg leading-none">{month.month}</span>
+                        </div>
+                        <div className="text-left">
+                          <div className="font-bold text-[#1D1D1F]">{month.title}</div>
+                          <div className="text-sm text-[#86868B]">{month.focus}</div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-4">
+                        <div className="hidden md:flex items-center gap-2">
+                          <div className="w-24 h-1.5 bg-black/10 rounded-full overflow-hidden">
+                            <div className="h-full bg-accent-blue rounded-full transition-all" style={{ width: `${pctMonth}%` }} />
+                          </div>
+                          <span className="text-xs font-medium text-[#86868B]">{pctMonth}%</span>
+                        </div>
+                        {expandedMonths.has(mIdx) ? <ChevronDown className="w-4 h-4 text-[#86868B]" /> : <ChevronRight className="w-4 h-4 text-[#86868B]" />}
+                      </div>
+                    </button>
+
+                    {expandedMonths.has(mIdx) && (
+                      <div className="p-4 space-y-3 bg-white">
+                        {month.weeks?.map((week, wIdx) => {
+                          const weekKey = `${mIdx}-${wIdx}`;
+                          const weekDayKeys = (week.days || []).map((_, dI) => `m${mIdx}-w${wIdx}-d${dI}`);
+                          const doneInWeek = weekDayKeys.filter(k => roadmap.completedDays?.[k]).length;
+                          const totalInWeek = week.days?.length || 0;
+
+                          return (
+                            <div key={wIdx} className="border border-black/6 rounded-xl overflow-hidden">
+                              <button
+                                onClick={() => toggleWeek(weekKey)}
+                                className="w-full flex items-center justify-between p-4 hover:bg-[#F5F5F7] transition-colors"
+                              >
+                                <div className="flex items-center gap-3">
+                                  <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold text-xs ${doneInWeek === totalInWeek && totalInWeek > 0 ? 'bg-accent-green text-white' : 'bg-accent-blue/10 text-accent-blue'}`}>
+                                    W{week.week}
+                                  </div>
+                                  <div className="text-left">
+                                    <span className="font-semibold text-[#1D1D1F] text-sm">{week.goal}</span>
+                                    <div className="flex items-center gap-2 mt-0.5">
+                                      {week.topicsCount && (
+                                        <span className="text-xs text-[#86868B]">{week.topicsCount} topics</span>
+                                      )}
+                                      <span className="text-xs text-[#86868B]">{doneInWeek}/{totalInWeek} done</span>
+                                    </div>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                  <div className="w-16 h-1.5 bg-black/10 rounded-full overflow-hidden">
+                                    <div className={`h-full rounded-full transition-all ${doneInWeek === totalInWeek && totalInWeek > 0 ? 'bg-accent-green' : 'bg-accent-blue'}`}
+                                      style={{ width: totalInWeek > 0 ? `${(doneInWeek / totalInWeek) * 100}%` : '0%' }}
+                                    />
+                                  </div>
+                                  {expandedWeeks.has(weekKey) ? <ChevronDown className="w-4 h-4 text-[#86868B]" /> : <ChevronRight className="w-4 h-4 text-[#86868B]" />}
+                                </div>
+                              </button>
+
+                              {expandedWeeks.has(weekKey) && (
+                                <div className="border-t border-black/5 divide-y divide-black/5">
+                                  {week.days?.map((day, dIdx) => {
+                                    const dayKey = `m${mIdx}-w${wIdx}-d${dIdx}`;
+                                    const isDone = !!roadmap.completedDays?.[dayKey];
+
+                                    return (
+                                      <div key={dIdx} className={`flex items-start gap-4 p-4 transition-colors ${isDone ? 'bg-accent-green/3' : 'hover:bg-[#F5F5F7]/60'}`}>
+                                        <button
+                                          onClick={() => toggleDayComplete(dayKey)}
+                                          className="mt-0.5 flex-shrink-0"
+                                        >
+                                          {isDone
+                                            ? <CheckSquare className="w-5 h-5 text-accent-green" />
+                                            : <Square className="w-5 h-5 text-black/20 hover:text-accent-blue transition-colors" />
+                                          }
+                                        </button>
+                                        <div className="w-12 h-12 rounded-xl bg-white border border-black/8 flex flex-col items-center justify-center flex-shrink-0">
+                                          <span className="text-[9px] font-bold text-[#86868B] uppercase">{day.day?.slice(0, 3)}</span>
+                                          <Flame className="w-3 h-3 text-orange-400 mt-0.5" />
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                          <p className={`text-sm font-semibold ${isDone ? 'line-through text-[#86868B]' : 'text-[#1D1D1F]'}`}>{day.task}</p>
+                                          <a
+                                            href={`https://www.youtube.com/results?search_query=${encodeURIComponent(day.youtubeQuery)}`}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="inline-flex items-center gap-1.5 mt-1.5 text-xs text-[#86868B] hover:text-red-500 transition-colors"
+                                          >
+                                            <svg className="w-3.5 h-3.5 fill-current text-red-500" viewBox="0 0 24 24"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" /></svg>
+                                            Watch: {day.youtubeQuery}
+                                          </a>
+                                          {day.topicsCovered ? <span className="ml-3 text-xs font-medium text-violet-500">+{day.topicsCovered} topic</span> : null}
+                                        </div>
+                                        <div className="flex items-center gap-1 text-xs text-[#86868B] flex-shrink-0 bg-[#F5F5F7] px-2 py-1 rounded-lg">
+                                          <Clock className="w-3 h-3" />
+                                          {day.estimatedMinutes}m
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
-                  <div className="w-[calc(100%-4rem)] md:w-[calc(50%-3rem)] bg-[#F5F5F7] border border-black/5 p-6 rounded-2xl shadow-sm">
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="font-bold text-[#1D1D1F]">{step.phase}</div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Projects */}
+          <div className="glass-card p-6">
+            <h3 className="flex items-center gap-2 text-base font-bold text-[#1D1D1F] mb-6">
+              <Briefcase className="w-4 h-4 text-accent-blue" /> Portfolio Projects
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {roadmap.projects?.map((project, i) => {
+                const diffColors: Record<string, string> = {
+                  Beginner: 'text-accent-green bg-accent-green/10 border-accent-green/20',
+                  Intermediate: 'text-accent-amber bg-amber-50 border-amber-200',
+                  Advanced: 'text-red-500 bg-red-50 border-red-200',
+                };
+                const dc = diffColors[project.difficulty || ''] || 'text-[#86868B] bg-[#F5F5F7] border-black/10';
+                return (
+                  <div key={i} className="bg-[#F5F5F7] border border-black/5 p-5 rounded-2xl hover:shadow-md transition-all">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Star className="w-4 h-4 text-accent-amber flex-shrink-0" />
+                      {project.difficulty && (
+                        <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${dc}`}>{project.difficulty}</span>
+                      )}
                     </div>
-                    <div className="text-[#86868B] text-sm leading-relaxed">{step.focus}</div>
+                    <h4 className="font-bold text-[#1D1D1F] text-sm mb-2">{project.title}</h4>
+                    <p className="text-xs text-[#86868B] leading-relaxed">{project.description}</p>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
-          <div className="glass-card p-10">
-            <h3 className="flex items-center gap-2 text-lg font-medium text-[#1D1D1F] mb-8">
-              <Briefcase className="w-5 h-5 text-accent-blue" /> Recommended Projects
+          {/* Career Advice */}
+          <div className="bg-gradient-to-br from-accent-blue/5 via-white to-accent-green/5 border border-black/5 rounded-2xl p-6">
+            <h3 className="text-base font-bold text-[#1D1D1F] mb-3 flex items-center gap-2">
+              <Zap className="w-4 h-4 text-accent-blue" /> Personalized Career Advice
             </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              {roadmap.projects?.map((project: any, i: number) => (
-                <div key={i} className="bg-[#F5F5F7] border border-black/5 p-6 rounded-xl hover:bg-[#F5F5F7]/80 transition-colors">
-                  <h4 className="font-medium text-[#1D1D1F] mb-3">{project.title}</h4>
-                  <p className="text-sm text-[#86868B] leading-relaxed">{project.description}</p>
-                </div>
-              ))}
+            <p className="text-[#1D1D1F] leading-relaxed text-sm">{roadmap.careerAdvice}</p>
+          </div>
+
+          {/* Convert to Course CTA */}
+          <div className="flex flex-col items-center justify-center p-10 glass-card text-center">
+            <div className="w-16 h-16 rounded-3xl bg-accent-blue/10 flex items-center justify-center mb-4">
+              <BookOpen className="w-8 h-8 text-accent-blue" />
             </div>
-          </div>
-
-          <div className="bg-gradient-to-br from-accent-blue/5 to-accent-green/5 border border-black/5 rounded-2xl p-10">
-            <h3 className="text-lg font-medium text-[#1D1D1F] mb-4 flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-accent-blue" /> Career Advice
-            </h3>
-            <p className="text-[#1D1D1F] leading-relaxed text-lg font-light">{roadmap.careerAdvice}</p>
-          </div>
-
-          <div className="flex flex-col items-center justify-center p-10 glass-card mt-12">
-            <h3 className="text-2xl font-bold text-[#1D1D1F] mb-3">Ready to start learning?</h3>
-            <p className="text-[#86868B] mb-8 text-center max-w-lg">
-              Convert this roadmap into a structured, step-by-step course with curated YouTube video suggestions for every topic.
+            <h3 className="text-2xl font-bold text-[#1D1D1F] mb-2">Ready to start learning?</h3>
+            <p className="text-[#86868B] mb-8 max-w-lg text-sm">
+              Convert this roadmap into a structured video course with AI-matched YouTube tutorials for every topic.
             </p>
-            <button 
-              onClick={convertToCourse}
-              disabled={converting}
-              className="btn-primary px-8 py-4 text-lg"
-            >
-              {converting ? (
-                <><Loader2 className="w-5 h-5 animate-spin" /> Generating Course...</>
-              ) : (
-                <>Convert to Structured Course <ArrowRight className="w-5 h-5" /></>
-              )}
+            {error && (
+              <div className="mb-4 text-sm text-red-600 bg-red-50 px-4 py-2 rounded-xl border border-red-200">{error}</div>
+            )}
+            <button onClick={convertToCourse} disabled={converting} className="btn-primary px-10 py-4 text-base">
+              {converting ? <><Loader2 className="w-5 h-5 animate-spin" /> Generating Course…</> : <>Convert to Video Course <ArrowRight className="w-5 h-5" /></>}
             </button>
           </div>
-
-        </motion.div>
+        </div>
       )}
     </div>
   );
