@@ -102,6 +102,10 @@ function extractJSON(text: string): string {
   } catch (err) {
     console.error('[extractJSON] Error parsing text:', err);
   }
+  // If we can't extract JSON, check if the text itself says "Quota"
+  if (text.toLowerCase().includes('quota') || text.toLowerCase().includes('limit')) {
+    throw new Error('RESOURCE_EXHAUSTED');
+  }
   return text;
 }
 
@@ -154,8 +158,9 @@ Return ONLY the 11-character YouTube video ID (e.g. dQw4w9WgXcQ). Nothing else â
     if (match) return res.json({ videoId: match[0] });
     return res.json({ videoId: null, error: 'Could not extract a valid video ID.' });
   } catch (err: any) {
-    console.error('[/api/getVideoId]', err?.message);
-    if (err?.message?.includes('429') || err?.message?.includes('RESOURCE_EXHAUSTED')) {
+    const errText = JSON.stringify(err).toLowerCase() + String(err).toLowerCase();
+    console.error('[/api/getVideoId]', err?.message || err);
+    if (errText.includes('429') || errText.includes('resource_exhausted') || errText.includes('quota') || errText.includes('limit')) {
       console.log('Quota exceeded, returning mock video ID');
       return res.json({ videoId: 'dQw4w9WgXcQ' }); // Safe fallback video
     }
@@ -210,8 +215,9 @@ Return ONLY valid JSON (no markdown fences, no text before or after):
     if (!data.takeaways?.length) throw new Error('Invalid takeaway structure');
     res.json(data);
   } catch (err: any) {
+    const errText = JSON.stringify(err).toLowerCase() + String(err).toLowerCase();
     console.error('[/api/getKeyTakeaways] Error:', err?.message || err);
-    if (err?.message?.includes('429') || err?.message?.includes('RESOURCE_EXHAUSTED') || String(err).includes('takeaway structure')) {
+    if (errText.includes('429') || errText.includes('resource_exhausted') || errText.includes('quota') || errText.includes('limit')) {
       return res.json({
         summary: "Important foundational concepts for this topic.",
         takeaways: [
@@ -309,8 +315,9 @@ Include all 3 months, each with 4 weeks, each week with exactly ${daysPerWeek} d
 
     res.json(data);
   } catch (err: any) {
+    const errText = JSON.stringify(err).toLowerCase() + String(err).toLowerCase();
     console.error('[/api/generateRoadmap] Error:', err?.message || err);
-    if (err?.message?.includes('429') || err?.message?.includes('RESOURCE_EXHAUSTED') || String(err).includes('missing months')) {
+    if (errText.includes('429') || errText.includes('resource_exhausted') || errText.includes('quota') || errText.includes('limit') || errText.includes('missing months')) {
       console.log('Quota exceeded, returning mock roadmap');
       return res.json({
         skillGap: ["Advanced Architecture", "System Design Patterns", "Cloud Deployment"],
