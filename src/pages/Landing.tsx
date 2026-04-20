@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { signInWithGoogle } from '../firebase';
+import { signInWithGoogle, signInAsGuest } from '../firebase';
 import { useAuth } from '../components/AuthContext';
 import { motion } from 'motion/react';
 import {
@@ -78,7 +78,20 @@ export function Landing() {
       navigate('/dashboard');
     } catch (error: any) {
       console.error(error);
-      alert(`Login failed: ${error?.message || "Unknown error"}. If on a new domain, make sure to add it to Firebase Authentication Authorized Domains!`);
+      alert(`Google Login failed: ${error?.message || "Unknown error"}. If on a new domain, please use "Continue as Guest" instead!`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGuestLogin = async () => {
+    try {
+      setLoading(true);
+      await signInAsGuest();
+      navigate('/dashboard');
+    } catch (error: any) {
+      console.error(error);
+      alert(`Guest Login failed: ${error?.message || "Unknown error"}`);
     } finally {
       setLoading(false);
     }
@@ -98,19 +111,18 @@ export function Landing() {
           </div>
           <div className="flex items-center gap-3">
             <button
-              onClick={handleLogin}
+              onClick={handleGuestLogin}
               disabled={loading}
               className="text-sm font-medium text-[#8E8E93] hover:text-[#1C1C1E] transition-colors px-4 py-2"
             >
-              Sign In
+              Guest Login
             </button>
             <button
               onClick={handleLogin}
               disabled={loading}
               className="btn-primary text-sm px-5 py-2.5"
             >
-              {loading ? 'Connecting…' : 'Get Started Free'}
-              <ArrowRight className="w-4 h-4" />
+              {loading ? 'Connecting…' : 'Sign in with Google'}
             </button>
           </div>
         </div>
@@ -167,14 +179,15 @@ export function Landing() {
               disabled={loading}
               className="btn-primary text-base px-8 py-4 shadow-xl shadow-black/10 min-w-[220px]"
             >
-              {loading ? 'Connecting…' : 'Start for Free'}
+              {loading ? 'Connecting…' : 'Start with Google'}
               <ArrowRight className="w-5 h-5" />
             </button>
             <button
-              className="flex items-center gap-2 text-sm font-semibold text-[#8E8E93] hover:text-[#1C1C1E] transition-colors px-6 py-4"
-              onClick={() => document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' })}
+              onClick={handleGuestLogin}
+              disabled={loading}
+              className="flex items-center gap-2 text-sm font-semibold text-[#8E8E93] hover:text-[#1C1C1E] bg-white border border-black/10 rounded-full transition-colors px-6 py-4 shadow-sm"
             >
-              <Play className="w-4 h-4" /> See how it works
+              Continue as Guest
             </button>
           </motion.div>
 
@@ -338,9 +351,14 @@ export function Landing() {
               <p className="text-[#8E8E93] mb-8 leading-relaxed">
                 Free. No credit card. Just sign in with Google and get your AI roadmap in under 30 seconds.
               </p>
-              <button onClick={handleLogin} disabled={loading} className="btn-primary text-base px-10 py-4 shadow-xl shadow-black/10">
-                {loading ? 'Connecting…' : 'Get Started Free'} <ArrowRight className="w-5 h-5" />
-              </button>
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+                <button onClick={handleLogin} disabled={loading} className="btn-primary text-base px-10 py-4 shadow-xl shadow-black/10 shrink-0">
+                  {loading ? 'Connecting…' : 'Sign in with Google'} <ArrowRight className="w-5 h-5" />
+                </button>
+                <button onClick={handleGuestLogin} disabled={loading} className="px-8 py-4 text-sm font-semibold text-[#1C1C1E] bg-white rounded-full shadow-sm border border-black/10 hover:bg-gray-50 transition-colors shrink-0">
+                  {loading ? 'Connecting…' : 'Continue as Guest'}
+                </button>
+              </div>
             </div>
           </motion.div>
         </div>
