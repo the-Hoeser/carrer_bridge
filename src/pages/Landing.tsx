@@ -76,8 +76,9 @@ export function Landing() {
       setLoading(true);
       await signInWithGoogle();
       navigate('/dashboard');
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
+      alert(`Login failed: ${error?.message || "Unknown error"}. If on a new domain, make sure to add it to Firebase Authentication Authorized Domains!`);
     } finally {
       setLoading(false);
     }
