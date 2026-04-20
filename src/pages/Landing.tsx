@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { signInWithGoogle } from '../firebase';
+import { useAuth } from '../components/AuthContext';
 import { motion } from 'motion/react';
 import {
   ArrowRight, Sparkles, BookOpen, FileText, Target,
@@ -60,8 +61,15 @@ const TESTIMONIALS = [
 ];
 
 export function Landing() {
+  const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (user && !authLoading) {
+      navigate('/dashboard');
+    }
+  }, [user, authLoading, navigate]);
 
   const handleLogin = async () => {
     try {

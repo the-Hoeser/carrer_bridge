@@ -92,47 +92,34 @@ function YouTubePlayer({
           </div>
         )}
 
-        {/* Error state — no video ID available */}
-        {resolveError && !videoId && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 text-white z-10 bg-[#1a1a1a] px-6 text-center">
-            <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center mb-2">
-              <svg className="w-8 h-8 fill-current text-red-500" viewBox="0 0 24 24">
-                <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
-              </svg>
-            </div>
-            <div>
-              <p className="font-bold text-lg mb-1">Watch on YouTube</p>
-              <p className="text-sm text-white/50 max-w-sm mx-auto leading-relaxed">
-                This video opens in a new tab on YouTube. Click below to watch the tutorial.
-              </p>
-            </div>
-            <a
-              href={`https://www.youtube.com/results?search_query=${encodedQuery}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-2 px-8 py-3 bg-red-600 text-white rounded-xl font-semibold hover:bg-red-700 transition-colors flex items-center gap-2 text-sm"
-            >
-              <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
-                <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
-              </svg>
-              Open on YouTube
-            </a>
-          </div>
-        )}
-
-        {/* ── THE ACTUAL PLAYER: Simple iframe embed ── */}
-        {videoId && (
+        {/* ── THE ACTUAL PLAYER: iframe embed ── */}
+        {/* If we have a resolved videoId, embed it directly. Otherwise, embed YouTube search results. */}
+        {videoId ? (
           <iframe
             key={videoId}
             className="absolute inset-0 w-full h-full"
-            src={`https://www.youtube.com/embed/${videoId}?rel=0&modestbranding=1&autoplay=0`}
+            src={`https://www.youtube-nocookie.com/embed/${videoId}?rel=0&modestbranding=1&autoplay=0&origin=${encodeURIComponent(window.location.origin)}`}
             title={searchQuery}
             frameBorder="0"
+            referrerPolicy="strict-origin-when-cross-origin"
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
             allowFullScreen
             onLoad={() => setIframeLoaded(true)}
           />
-        )}
+        ) : resolveError ? (
+          /* Fallback: embed YouTube search as an iframe so video plays inline */
+          <iframe
+            key={`search-${encodedQuery}`}
+            className="absolute inset-0 w-full h-full"
+            src={`https://www.youtube.com/embed?listType=search&list=${encodedQuery}&rel=0&modestbranding=1`}
+            title={searchQuery}
+            frameBorder="0"
+            referrerPolicy="strict-origin-when-cross-origin"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+            allowFullScreen
+            onLoad={() => setIframeLoaded(true)}
+          />
+        ) : null}
 
         {/* Progress bar overlay */}
         {savedProgress > 0 && savedProgress < 100 && iframeLoaded && (
@@ -508,13 +495,13 @@ function CoursePlayer({
         {/* LEFT: Video + controls */}
         <div className="flex-1 overflow-y-auto p-6 space-y-5 bg-[#F5F5F7]">
           {/* Video player */}
-          {activeTopic?.videoSuggestion ? (
+          {(activeTopic?.videoSuggestion || activeTopic?.searchQuery || activeTopic?.videoId) ? (
             <YouTubePlayer
-              searchQuery={activeTopic.videoSuggestion.searchQuery}
+              searchQuery={activeTopic.videoSuggestion?.searchQuery || activeTopic.searchQuery || activeTopic.title}
               topicId={activeTopic.id || activeTopic.title}
               onProgress={handleWatchProgress}
               savedProgress={getWatchPct(activeTopic)}
-              preResolvedVideoId={activeTopic.videoSuggestion.videoId}
+              preResolvedVideoId={activeTopic.videoSuggestion?.videoId || activeTopic.videoId}
               onVideoResolved={handleVideoResolved}
             />
           ) : (
@@ -792,6 +779,7 @@ export function Learning() {
   const [loading, setLoading] = useState(true);
   const [selectedCourse, setSelectedCourse] = useState<any>(null);
   const [streak, setStreak] = useState(0);
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     if (!user) return;
@@ -836,11 +824,13 @@ export function Learning() {
     if (selectedCourse?.id === updated.id) setSelectedCourse(updated);
   };
 
-  const filteredCourses = courses.filter(c =>
-    filter === 'All' ||
-    c.category === filter ||
-    (filter === 'AI Generated' && c.isCustom)
-  );
+  const filteredCourses = courses.filter(c => {
+    const matchesFilter = filter === 'All' ||
+      c.category === filter ||
+      (filter === 'AI Generated' && c.isCustom);
+    const matchesSearch = (c.title || '').toLowerCase().includes(searchQuery.toLowerCase());
+    return matchesFilter && matchesSearch;
+  });
 
   if (loading) return (
     <div className="space-y-10">
@@ -887,17 +877,33 @@ export function Learning() {
           <h1 className="text-3xl font-bold tracking-tight text-[#1D1D1F]">Learning Hub</h1>
           <p className="text-[#86868B] mt-1">Watch, learn, and track your progress — all in one place.</p>
         </div>
-        <div className="flex items-center gap-3 flex-wrap">
-          <div className="flex items-center gap-2 px-4 py-2 bg-orange-50 border border-orange-100 rounded-full">
-            <Flame className="w-4 h-4 text-orange-500" />
-            <span className="text-sm font-bold text-orange-600">{streak} day streak</span>
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full md:w-auto">
+          {/* Search bar */}
+          <div className="relative flex-1 sm:w-64">
+            <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-[#8E8E93]">
+              <Rocket className="w-4 h-4" />
+            </div>
+            <input
+              type="text"
+              placeholder="Search courses..."
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              className="w-full bg-[#F5F5F7] border border-black/5 rounded-xl py-2 pl-10 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-accent-blue/20 transition-all"
+            />
           </div>
-          <div className="flex gap-1.5 bg-[#F5F5F7] p-1.5 rounded-xl border border-black/5 flex-wrap">
-            {['All', 'AI Generated', 'Coding'].map(f => (
-              <button key={f} onClick={() => setFilter(f)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${filter === f ? 'bg-white text-[#1C1C1E] shadow-sm font-semibold' : 'text-[#8E8E93] hover:text-[#1C1C1E]'}`}
-              >{f}</button>
-            ))}
+          
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex items-center gap-2 px-4 py-2 bg-orange-50 border border-orange-100 rounded-full">
+              <Flame className="w-4 h-4 text-orange-500" />
+              <span className="text-sm font-bold text-orange-600">{streak} day streak</span>
+            </div>
+            <div className="flex gap-1.5 bg-[#F5F5F7] p-1.5 rounded-xl border border-black/5 flex-wrap">
+              {['All', 'AI Generated', 'Coding'].map(f => (
+                <button key={f} onClick={() => setFilter(f)}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${filter === f ? 'bg-white text-[#1C1C1E] shadow-sm font-semibold' : 'text-[#8E8E93] hover:text-[#1C1C1E]'}`}
+                >{f}</button>
+              ))}
+            </div>
           </div>
         </div>
       </header>

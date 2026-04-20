@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../components/AuthContext';
 import { db, handleFirestoreError, OperationType, fetchWithAuth } from '../firebase';
-import { collection, addDoc, query, where, getDocs, orderBy, limit, doc, setDoc } from 'firebase/firestore';
+import { collection, addDoc, query, where, getDocs, orderBy, limit, doc, setDoc, getDoc } from 'firebase/firestore';
 import {
   Sparkles, Loader2, Target, CheckCircle2, BookOpen, Briefcase, ArrowRight,
   ChevronDown, ChevronRight, Calendar, Clock, Star, Settings2, BarChart3,
@@ -200,6 +200,15 @@ export function CareerGuide() {
           if (data.studyPrefs) setStudyPrefs(data.studyPrefs);
           setExpandedMonths(new Set([0]));
           setExpandedWeeks(new Set(['0-0']));
+        } else {
+          // No roadmap — try pre-filling from settings
+          const uSnap = await getDoc(doc(db, 'users', user.uid));
+          if (uSnap.exists()) {
+            const ud = uSnap.data();
+            if (ud.interests && ud.interests.length > 0) {
+              setFormData(p => ({ ...p, targetRole: ud.interests[0] }));
+            }
+          }
         }
         // Load saved prefs
         const prefsDoc = await getDocs(query(collection(db, 'studyPrefs'), where('userId', '==', user.uid)));
@@ -240,6 +249,15 @@ export function CareerGuide() {
   const generateRoadmap = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
+
+    const FREE_TIER_LIMIT = 4;
+    const usageKey = `ai_usage_roadmaps_${user.email || user.uid}`;
+    const currentUsage = parseInt(localStorage.getItem(usageKey) || '0');
+    if (currentUsage >= FREE_TIER_LIMIT) {
+      setError('Free tier limit reached. You have used all 4 of your free roadmaps. Please upgrade to continue.');
+      return;
+    }
+
     setLoading(true);
     setError(null);
     try {
@@ -274,6 +292,8 @@ export function CareerGuide() {
       setRoadmap(newRoadmap);
       setExpandedMonths(new Set([0]));
       setExpandedWeeks(new Set(['0-0']));
+
+      localStorage.setItem(usageKey, (currentUsage + 1).toString());
     } catch (error: any) {
       console.error('Roadmap Generation Error:', error);
       setError(error?.message || 'Unknown error. Please try again.');
@@ -303,6 +323,15 @@ export function CareerGuide() {
 
   const convertToCourse = async () => {
     if (!user || !roadmap) return;
+
+    const FREE_TIER_LIMIT = 4;
+    const usageKey = `ai_usage_courses_${user.email || user.uid}`;
+    const currentUsage = parseInt(localStorage.getItem(usageKey) || '0');
+    if (currentUsage >= FREE_TIER_LIMIT) {
+      setError('Free tier limit reached. You have created all 4 of your free video courses. Please upgrade to continue.');
+      return;
+    }
+
     setConverting(true);
     try {
       const response = await fetchWithAuth('/api/convertToCourse', {
@@ -345,6 +374,8 @@ export function CareerGuide() {
       };
 
       await addDoc(collection(db, 'courses'), newCourse);
+
+      localStorage.setItem(usageKey, (currentUsage + 1).toString());
       navigate('/learning');
     } catch (error: any) {
       console.error('Course Generation Error:', error);

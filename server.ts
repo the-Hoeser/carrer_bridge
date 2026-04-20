@@ -353,12 +353,19 @@ Each videoId MUST be exactly 11 characters. If you cannot find a video for a que
         const batchJson = extractJSON(batchRaw);
         const resolved: { index: number; videoId: string | null }[] = JSON.parse(batchJson);
 
-        // Map resolved IDs back to topics
+        // Map resolved IDs back to topics — store inside videoSuggestion so
+        // the frontend YouTubePlayer can find them via preResolvedVideoId
         resolved.forEach((r) => {
           const idx = r.index - 1;
           if (idx >= 0 && idx < allTopics.length && r.videoId && /^[a-zA-Z0-9_-]{11}$/.test(r.videoId)) {
             const { moduleIdx, topicIdx } = allTopics[idx];
-            data.modules[moduleIdx].topics[topicIdx].videoId = r.videoId;
+            const topic = data.modules[moduleIdx].topics[topicIdx];
+            // Store in videoSuggestion (the field the frontend reads)
+            topic.videoSuggestion = {
+              searchQuery: topic.searchQuery || topic.title,
+              title: topic.title,
+              videoId: r.videoId
+            };
           }
         });
 

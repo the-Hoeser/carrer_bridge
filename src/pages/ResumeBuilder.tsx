@@ -58,7 +58,7 @@ function ClassicResume({ data }: { data: ResumeData }) {
         <p className="text-[11px] text-zinc-600 mt-1">{restLines(data.personalInfo) || 'email@example.com | (123) 456-7890 | linkedin.com/in/profile'}</p>
       </div>
       {data.summary && <><SectionHead title="Professional Summary" className="text-zinc-900 border-b border-zinc-400 pb-1" /><Body text={data.summary} placeholder="" /></>}
-      <SectionHead title="Experience" className="text-zinc-900 border-b border-zinc-400 pb-1" /><Body text={data.experience} placeholder="Company Name – Role | Jan 2022 – Present₊ Achieved X by doing Y resulting in Z." />
+      <SectionHead title="Experience" className="text-zinc-900 border-b border-zinc-400 pb-1" /><Body text={data.experience} placeholder="Company Name – Role | Jan 2022 – Present\n• Achieved X by doing Y resulting in Z." />
       <SectionHead title="Education" className="text-zinc-900 border-b border-zinc-400 pb-1" /><Body text={data.education} placeholder="University Name – Degree, Year" />
       <SectionHead title="Skills" className="text-zinc-900 border-b border-zinc-400 pb-1" /><Body text={data.skills} placeholder="JavaScript, React, Node.js, Python, SQL" />
       {data.projects && <><SectionHead title="Projects" className="text-zinc-900 border-b border-zinc-400 pb-1" /><Body text={data.projects} placeholder="" /></>}
@@ -96,7 +96,7 @@ function ModernResume({ data }: { data: ResumeData }) {
       <div className="flex-1 p-8">
         {data.summary && <><h3 className="text-[11px] font-extrabold uppercase tracking-widest text-blue-700 border-b border-blue-100 pb-1 mb-2">Summary</h3><Body text={data.summary} placeholder="" /></>}
         <h3 className="text-[11px] font-extrabold uppercase tracking-widest text-blue-700 border-b border-blue-100 pb-1 mb-2 mt-5 first:mt-0">Experience</h3>
-        <Body text={data.experience} placeholder="Company – Role | Jan 2022 – Present₊ Led X resulting in Y." />
+        <Body text={data.experience} placeholder="Company – Role | Jan 2022 – Present\n• Led X resulting in Y." />
         <h3 className="text-[11px] font-extrabold uppercase tracking-widest text-blue-700 border-b border-blue-100 pb-1 mb-2 mt-5">Education</h3>
         <Body text={data.education} placeholder="University – Degree, Year" />
         {data.projects && <><h3 className="text-[11px] font-extrabold uppercase tracking-widest text-blue-700 border-b border-blue-100 pb-1 mb-2 mt-5">Projects</h3><Body text={data.projects} placeholder="" /></>}
@@ -121,7 +121,7 @@ function CreativeResume({ data }: { data: ResumeData }) {
         </div>
         <div className="col-span-2 p-7">
           <h3 className="text-[10px] font-extrabold uppercase tracking-widest text-pink-500 border-b-2 border-pink-100 pb-1 mb-3">Experience</h3>
-          <Body text={data.experience} placeholder="Company – Role | Jan 2022 – Present₊ Delivered X resulting in Y." />
+          <Body text={data.experience} placeholder="Company – Role | Jan 2022 – Present\n• Delivered X resulting in Y." />
           <h3 className="text-[10px] font-extrabold uppercase tracking-widest text-pink-500 border-b-2 border-pink-100 pb-1 mb-3 mt-6">Education</h3>
           <Body text={data.education} placeholder="University – Degree, Year" />
           {data.projects && <><h3 className="text-[10px] font-extrabold uppercase tracking-widest text-pink-500 border-b-2 border-pink-100 pb-1 mb-3 mt-6">Projects</h3><Body text={data.projects} placeholder="" /></>}
@@ -170,7 +170,7 @@ function ExecutiveResume({ data }: { data: ResumeData }) {
       )}
       <div className="px-10 py-7 space-y-6">
         {[
-          { label: 'Professional Experience', text: data.experience, ph: 'Company Name – Senior Role | Jan 2020 – Present₊ Led team of 15 engineers, increasing delivery velocity by 40%.' },
+          { label: 'Professional Experience', text: data.experience, ph: 'Company Name – Senior Role | Jan 2020 – Present\n• Led team of 15 engineers, increasing delivery velocity by 40%.' },
           { label: 'Education', text: data.education, ph: 'University – MBA / Degree' },
           { label: 'Core Competencies', text: data.skills, ph: 'Strategic Planning · Team Leadership · P&L Management' },
           ...(data.projects ? [{ label: 'Notable Projects', text: data.projects, ph: '' }] : []),
