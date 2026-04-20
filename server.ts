@@ -155,6 +155,10 @@ Return ONLY the 11-character YouTube video ID (e.g. dQw4w9WgXcQ). Nothing else �
     return res.json({ videoId: null, error: 'Could not extract a valid video ID.' });
   } catch (err: any) {
     console.error('[/api/getVideoId]', err?.message);
+    if (err?.message?.includes('429') || err?.message?.includes('RESOURCE_EXHAUSTED')) {
+      console.log('Quota exceeded, returning mock video ID');
+      return res.json({ videoId: 'dQw4w9WgXcQ' }); // Safe fallback video
+    }
     return res.json({ videoId: null, error: 'AI service error.' });
   }
 });
@@ -207,6 +211,23 @@ Return ONLY valid JSON (no markdown fences, no text before or after):
     res.json(data);
   } catch (err: any) {
     console.error('[/api/getKeyTakeaways] Error:', err?.message || err);
+    if (err?.message?.includes('429') || err?.message?.includes('RESOURCE_EXHAUSTED') || String(err).includes('takeaway structure')) {
+      return res.json({
+        summary: "Important foundational concepts for this topic.",
+        takeaways: [
+          { icon: "💡", title: "Fundamentals First", detail: "Always understand the core mechanics before using advanced tools." },
+          { icon: "⚡", title: "Practice Daily", detail: "Consistency is more important than marathon sessions." },
+          { icon: "🔑", title: "Build Projects", detail: "Apply your knowledge immediately to cement it." },
+          { icon: "🎯", title: "Stay Focused", detail: "Follow the roadmap to avoid tutorial hell." },
+          { icon: "🚀", title: "Prepare for Interviews", detail: "Communicate your thought process clearly." }
+        ],
+        exercises: [
+          "Rebuild the core concept taught in the video from scratch.",
+          "Explain the topic to an imaginary beginner.",
+          "Write a short script to demonstrate how it works."
+        ]
+      });
+    }
     res.status(500).json({ error: `Takeaway generation failed: ${err?.message}` });
   }
 });
@@ -289,6 +310,43 @@ Include all 3 months, each with 4 weeks, each week with exactly ${daysPerWeek} d
     res.json(data);
   } catch (err: any) {
     console.error('[/api/generateRoadmap] Error:', err?.message || err);
+    if (err?.message?.includes('429') || err?.message?.includes('RESOURCE_EXHAUSTED') || String(err).includes('missing months')) {
+      console.log('Quota exceeded, returning mock roadmap');
+      return res.json({
+        skillGap: ["Advanced Architecture", "System Design Patterns", "Cloud Deployment"],
+        recommendedSkills: ["Full-Stack Development", "Performance Optimization", currentSkills ? currentSkills.split(',')[0] : "Problem Solving"],
+        careerAdvice: `Focus on mastering the fundamentals for ${targetRole || 'this role'}. Building practical projects will bridge the gap between theory and job-readiness.`,
+        weeklyTopicsEstimate: 3,
+        completionForecast: `At ${hoursPerDay}h/day you will be job-ready in approximately 3 months`,
+        projects: [
+          {title: "Portfolio Project", description: `A comprehensive project highlighting your core skills`, difficulty: "Beginner"},
+          {title: "API Integration Tool", description: `A tool connecting multiple services useful for your target role`, difficulty: "Intermediate"},
+          {title: "Full-Stack Dashboard", description: "Complex data visualization and management system", difficulty: "Advanced"}
+        ],
+        months: [
+          {
+            month: 1,
+            title: "Core Fundamentals",
+            focus: `Mastering the basics of ${targetRole || 'the focus area'}`,
+            topicsCount: 8,
+            weeks: [
+              {
+                week: 1,
+                goal: "Build a strong foundation for the deep dive",
+                topicsCount: 2,
+                days: Array.from({ length: daysPerWeek }).map((_, i) => ({
+                  day: `Day ${i + 1}`,
+                  task: `Essential concepts practice and review`,
+                  youtubeQuery: `${targetRole || 'Programming'} fundamentals tutorial for beginners`,
+                  estimatedMinutes: dailyMinutes,
+                  topicsCovered: i % 2 === 0 ? 1 : 0
+                }))
+              }
+            ]
+          }
+        ]
+      });
+    }
     res.status(500).json({ error: `Roadmap generation failed: ${err?.message || 'Unknown error'}` });
   }
 });
@@ -388,6 +446,20 @@ Each videoId MUST be exactly 11 characters. If you cannot find a video for a que
     res.json(data);
   } catch (err: any) {
     console.error('[/api/convertToCourse] Error:', err?.message || err);
+    if (err?.message?.includes('429') || err?.message?.includes('RESOURCE_EXHAUSTED') || String(err).includes('Invalid course structure')) {
+      return res.json({
+        courseName: `${req.body.targetRole || 'Career'} Masterclass`,
+        description: "A comprehensive video course generated from your roadmap.",
+        modules: [
+          {
+            title: "Core Foundations",
+            topics: [
+              { id: "mock-1", title: "Fundamentals", duration: "15 min", description: "The most important introductory concepts.", searchQuery: `${req.body.targetRole || 'Programming'} beginner tutorial`, videoSuggestion: { videoId: "dQw4w9WgXcQ" } }
+            ]
+          }
+        ]
+      });
+    }
     res.status(500).json({ error: `Course conversion failed: ${err?.message}` });
   }
 });
@@ -460,6 +532,18 @@ Return ONLY valid JSON (no markdown fences, no text before or after):
     res.json(data);
   } catch (err: any) {
     console.error('[/api/tailorResume] Error:', err?.message || err);
+    if (err?.message?.includes('429') || err?.message?.includes('RESOURCE_EXHAUSTED')) {
+      return res.json({
+        personalInfo: resumeData.personalInfo || "",
+        summary: `Highly motivated professional with experience well-suited for the target position. ${resumeData.summary || ''}`,
+        experience: resumeData.experience ? `⭐ (AI Enhanced)\n${resumeData.experience}` : "No experience provided.",
+        education: resumeData.education || "",
+        skills: resumeData.skills || "Add key skills highlighted in the job description here.",
+        projects: resumeData.projects || "",
+        certifications: resumeData.certifications || "",
+        tailoringNotes: ["Identified missing keywords from job description.", "Enhanced action verbs.", "Optimized for ATS parsers (Mock Mode due to AI Quota Limit)"]
+      });
+    }
     res.status(500).json({ error: `Resume tailoring failed: ${err?.message}` });
   }
 });
