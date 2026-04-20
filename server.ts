@@ -158,9 +158,14 @@ Return ONLY the 11-character YouTube video ID (e.g. dQw4w9WgXcQ). Nothing else â
     if (match) return res.json({ videoId: match[0] });
     return res.json({ videoId: null, error: 'Could not extract a valid video ID.' });
   } catch (err: any) {
-    const errText = JSON.stringify(err).toLowerCase() + String(err).toLowerCase();
-    console.error('[/api/getVideoId]', err?.message || err);
-    if (errText.includes('429') || errText.includes('resource_exhausted') || errText.includes('quota') || errText.includes('limit')) {
+    const message = err?.message || String(err);
+    const stack = err?.stack || '';
+    const errObjStr = JSON.stringify(err);
+    const combinedErr = (message + stack + errObjStr).toLowerCase();
+    
+    console.error('[/api/getVideoId] Error:', message);
+    
+    if (combinedErr.includes('429') || combinedErr.includes('resource_exhausted') || combinedErr.includes('quota') || combinedErr.includes('limit')) {
       console.log('Quota exceeded, returning mock video ID');
       return res.json({ videoId: 'dQw4w9WgXcQ' }); // Safe fallback video
     }
@@ -215,9 +220,14 @@ Return ONLY valid JSON (no markdown fences, no text before or after):
     if (!data.takeaways?.length) throw new Error('Invalid takeaway structure');
     res.json(data);
   } catch (err: any) {
-    const errText = JSON.stringify(err).toLowerCase() + String(err).toLowerCase();
-    console.error('[/api/getKeyTakeaways] Error:', err?.message || err);
-    if (errText.includes('429') || errText.includes('resource_exhausted') || errText.includes('quota') || errText.includes('limit')) {
+    const message = err?.message || String(err);
+    const stack = err?.stack || '';
+    const errObjStr = JSON.stringify(err);
+    const combinedErr = (message + stack + errObjStr).toLowerCase();
+    
+    console.error('[/api/getKeyTakeaways] Error:', message);
+    
+    if (combinedErr.includes('429') || combinedErr.includes('resource_exhausted') || combinedErr.includes('quota') || combinedErr.includes('limit')) {
       return res.json({
         summary: "Important foundational concepts for this topic.",
         takeaways: [
@@ -234,7 +244,7 @@ Return ONLY valid JSON (no markdown fences, no text before or after):
         ]
       });
     }
-    res.status(500).json({ error: `Takeaway generation failed: ${err?.message}` });
+    res.status(500).json({ error: `Takeaway generation failed: ${message}` });
   }
 });
 
@@ -315,9 +325,14 @@ Include all 3 months, each with 4 weeks, each week with exactly ${daysPerWeek} d
 
     res.json(data);
   } catch (err: any) {
-    const errText = JSON.stringify(err).toLowerCase() + String(err).toLowerCase();
-    console.error('[/api/generateRoadmap] Error:', err?.message || err);
-    if (errText.includes('429') || errText.includes('resource_exhausted') || errText.includes('quota') || errText.includes('limit') || errText.includes('missing months')) {
+    const message = err?.message || String(err);
+    const stack = err?.stack || '';
+    const errObjStr = JSON.stringify(err);
+    const combinedErr = (message + stack + errObjStr).toLowerCase();
+    
+    console.error('[/api/generateRoadmap] Error:', message);
+    
+    if (combinedErr.includes('429') || combinedErr.includes('resource_exhausted') || combinedErr.includes('quota') || combinedErr.includes('limit') || combinedErr.includes('missing months')) {
       console.log('Quota exceeded, returning mock roadmap');
       return res.json({
         skillGap: ["Advanced Architecture", "System Design Patterns", "Cloud Deployment"],
@@ -341,11 +356,11 @@ Include all 3 months, each with 4 weeks, each week with exactly ${daysPerWeek} d
                 week: 1,
                 goal: "Build a strong foundation for the deep dive",
                 topicsCount: 2,
-                days: Array.from({ length: daysPerWeek }).map((_, i) => ({
+                days: Array.from({ length: daysPerWeek || 5 }).map((_, i) => ({
                   day: `Day ${i + 1}`,
                   task: `Essential concepts practice and review`,
                   youtubeQuery: `${targetRole || 'Programming'} fundamentals tutorial for beginners`,
-                  estimatedMinutes: dailyMinutes,
+                  estimatedMinutes: dailyMinutes || 60,
                   topicsCovered: i % 2 === 0 ? 1 : 0
                 }))
               }
@@ -354,7 +369,7 @@ Include all 3 months, each with 4 weeks, each week with exactly ${daysPerWeek} d
         ]
       });
     }
-    res.status(500).json({ error: `Roadmap generation failed: ${err?.message || 'Unknown error'}` });
+    res.status(500).json({ error: `Roadmap generation failed: ${message}` });
   }
 });
 
